@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AFL Analytics Dashboard - Vue.js</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 2rem;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .controls {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            align-items: end;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group label {
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: #1f77b4;
+        }
+        
+        .form-group select,
+        .form-group input {
+            padding: 0.5rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #1f77b4;
+        }
+        
+        .btn {
+            background: linear-gradient(45deg, #1f77b4, #17a2b8);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(31, 119, 180, 0.4);
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .chart-container h3 {
+            color: #1f77b4;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #1f77b4;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            margin: 2rem 0;
+        }
+        
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="dashboard">
+            <div class="header">
+                <h1>🏈 AFL Analytics Dashboard</h1>
+                <p>Interactive Vue.js Dashboard with Live Data</p>
+            </div>
+            
+            <div v-if="error" class="error">
+                {{ error }}
+            </div>
+            
+            <div v-if="loading" class="loading">
+                <p>📊 Loading AFL data...</p>
+            </div>
+            
+            <div v-if="!loading && !error">
+                <!-- Controls -->
+                <div class="controls">
+                    <div class="controls-grid">
+                        <div class="form-group">
+                            <label>Team</label>
+                            <select v-model="selectedTeam" @change="filterData">
+                                <option value="">All Teams</option>
+                                <option v-for="team in teams" :key="team" :value="team">
+                                    {{ team }}
+                                </option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Season</label>
+                            <select v-model="selectedSeason" @change="filterData">
+                                <option value="">All Seasons</option>
+                                <option v-for="season in seasons" :key="season" :value="season">
+                                    {{ season }}
+                                </option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Minimum Games</label>
+                            <input type="number" v-model="minGames" @input="filterData" min="1" :max="maxGames">
+                        </div>
+                        
+                        <div class="form-group">
+                            <button class="btn" @click="resetFilters">Reset Filters</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ filteredData.length }}</div>
+                        <div class="stat-label">Total Players</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ avgDisposals }}</div>
+                        <div class="stat-label">Avg Disposals/Game</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ avgGoals }}</div>
+                        <div class="stat-label">Avg Goals/Game</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ topScorer }}</div>
+                        <div class="stat-label">Top Scorer</div>
+                    </div>
+                </div>
+                
+                <!-- Charts -->
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h3>Goals vs Disposals</h3>
+                        <canvas ref="scatterChart" width="400" height="300"></canvas>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <h3>Average Fantasy Points by Team</h3>
+                        <canvas ref="barChart" width="400" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    loading: true,
+                    error: null,
+                    rawData: [],
+                    filteredData: [],
+                    selectedTeam: '',
+                    selectedSeason: '',
+                    minGames: 1,
+                    scatterChart: null,
+                    barChart: null
+                }
+            },
+            
+            computed: {
+                teams() {
+                    return [...new Set(this.rawData.map(player => player.team))].sort();
+                },
+                
+                seasons() {
+                    return [...new Set(this.rawData.map(player => player.season))].sort();
+                },
+                
+                maxGames() {
+                    return Math.max(...this.rawData.map(player => parseInt(player.games) || 0));
+                },
+                
+                avgDisposals() {
+                    if (this.filteredData.length === 0) return 0;
+                    const avg = this.filteredData.reduce((sum, player) => 
+                        sum + (parseFloat(player.disposals) || 0), 0) / this.filteredData.length;
+                    return avg.toFixed(1);
+                },
+                
+                avgGoals() {
+                    if (this.filteredData.length === 0) return 0;
+                    const avg = this.filteredData.reduce((sum, player) => 
+                        sum + (parseFloat(player.goals) || 0), 0) / this.filteredData.length;
+                    return avg.toFixed(1);
+                },
+                
+                topScorer() {
+                    if (this.filteredData.length === 0) return 'N/A';
+                    const top = this.filteredData.reduce((max, player) => 
+                        (parseFloat(player.goals) || 0) > (parseFloat(max.goals) || 0) ? player : max);
+                    return top.first_name + ' ' + top.surname;
+                }
+            },
+            
+            async mounted() {
+                await this.loadData();
+                this.$nextTick(() => {
+                    this.initCharts();
+                });
+            },
+            
+            methods: {
+                async loadData() {
+                    try {
+                        this.loading = true;
+                        
+                        // Load CSV data from your repository
+                        const response = await fetch('./AFL_PROJECT/data_scripts/data/player_stats_afl_2015_2025_cleaned.csv');
+                        const csvText = await response.text();
+                        
+                        // Parse CSV
+                        Papa.parse(csvText, {
+                            header: true,
+                            complete: (results) => {
+                                this.rawData = results.data.filter(row => row.first_name); // Filter out empty rows
+                                this.filteredData = [...this.rawData];
+                                this.loading = false;
+                                
+                                this.$nextTick(() => {
+                                    this.updateCharts();
+                                });
+                            },
+                            error: (error) => {
+                                this.error = 'Error parsing CSV data: ' + error.message;
+                                this.loading = false;
+                            }
+                        });
+                        
+                    } catch (error) {
+                        this.error = 'Error loading data: ' + error.message;
+                        this.loading = false;
+                    }
+                },
+                
+                filterData() {
+                    this.filteredData = this.rawData.filter(player => {
+                        const teamMatch = !this.selectedTeam || player.team === this.selectedTeam;
+                        const seasonMatch = !this.selectedSeason || player.season === this.selectedSeason;
+                        const gamesMatch = (parseInt(player.games) || 0) >= this.minGames;
+                        
+                        return teamMatch && seasonMatch && gamesMatch;
+                    });
+                    
+                    this.updateCharts();
+                },
+                
+                resetFilters() {
+                    this.selectedTeam = '';
+                    this.selectedSeason = '';
+                    this.minGames = 1;
+                    this.filterData();
+                },
+                
+                initCharts() {
+                    // Initialize scatter chart
+                    const scatterCtx = this.$refs.scatterChart.getContext('2d');
+                    this.scatterChart = new Chart(scatterCtx, {
+                        type: 'scatter',
+                        data: {
+                            datasets: [{
+                                label: 'Players',
+                                data: [],
+                                backgroundColor: 'rgba(31, 119, 180, 0.6)',
+                                borderColor: 'rgba(31, 119, 180, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Disposals per Game'
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Goals per Game'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Initialize bar chart
+                    const barCtx = this.$refs.barChart.getContext('2d');
+                    this.barChart = new Chart(barCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: [],
+                            datasets: [{
+                                label: 'Average Fantasy Points',
+                                data: [],
+                                backgroundColor: 'rgba(31, 119, 180, 0.6)',
+                                borderColor: 'rgba(31, 119, 180, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Fantasy Points'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+                
+                updateCharts() {
+                    if (!this.scatterChart || !this.barChart) return;
+                    
+                    // Update scatter chart
+                    const scatterData = this.filteredData.map(player => ({
+                        x: parseFloat(player.disposals) || 0,
+                        y: parseFloat(player.goals) || 0
+                    }));
+                    
+                    this.scatterChart.data.datasets[0].data = scatterData;
+                    this.scatterChart.update();
+                    
+                    // Update bar chart - average fantasy points by team
+                    const teamStats = {};
+                    this.filteredData.forEach(player => {
+                        if (!teamStats[player.team]) {
+                            teamStats[player.team] = { total: 0, count: 0 };
+                        }
+                        teamStats[player.team].total += parseFloat(player.fantasy_points) || 0;
+                        teamStats[player.team].count += 1;
+                    });
+                    
+                    const teamLabels = Object.keys(teamStats).sort();
+                    const teamAverages = teamLabels.map(team => 
+                        teamStats[team].total / teamStats[team].count
+                    );
+                    
+                    this.barChart.data.labels = teamLabels;
+                    this.barChart.data.datasets[0].data = teamAverages;
+                    this.barChart.update();
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
